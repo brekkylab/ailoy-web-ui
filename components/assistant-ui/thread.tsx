@@ -35,6 +35,7 @@ import {
 } from "@/components/assistant-ui/attachment";
 
 import { cn } from "@/lib/utils";
+import { useAiloyAgentContext } from "../ailoy-agent-provider";
 
 export const Thread: FC = () => {
   return (
@@ -47,6 +48,10 @@ export const Thread: FC = () => {
           }}
         >
           <ThreadPrimitive.Viewport className="aui-thread-viewport relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll px-4">
+            <ThreadPrimitive.If disabled>
+              <ThreadLoading />
+            </ThreadPrimitive.If>
+
             <ThreadPrimitive.If empty>
               <ThreadWelcome />
             </ThreadPrimitive.If>
@@ -82,6 +87,24 @@ const ThreadScrollToBottom: FC = () => {
         <ArrowDownIcon />
       </TooltipIconButton>
     </ThreadPrimitive.ScrollToBottom>
+  );
+};
+
+const ThreadLoading: FC = () => {
+  const { agentLoadingProgress } = useAiloyAgentContext();
+  const loadingPercent =
+    agentLoadingProgress !== undefined
+      ? Math.round(
+          (agentLoadingProgress.current / agentLoadingProgress.total) * 100,
+        )
+      : 0;
+
+  return (
+    <div className="mx-auto my-auto flex w-full max-w-[var(--thread-max-width)] flex-grow flex-col justify-center">
+      <div className="text-2xl font-semibold">
+        Initializing Ailoy Agent... {loadingPercent}%
+      </div>
+    </div>
   );
 };
 
