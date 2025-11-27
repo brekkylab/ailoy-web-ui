@@ -5,8 +5,10 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
+    "postbuild": "bash ./postbuild.sh",
     "start": "next start",
     "lint": "next lint",
+    "deploy": "gh-pages -d out -t",
     "prettier": "prettier --check .",
     "prettier:fix": "prettier --write ."
   },
@@ -58,6 +60,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.0.3",
+    "gh-pages": "^6.3.0",
     "prettier": "^3.6.2",
     "prettier-plugin-tailwindcss": "^0.7.1",
     "tailwindcss": "^4",

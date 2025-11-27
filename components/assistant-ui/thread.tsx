@@ -52,7 +52,7 @@ export const Thread: FC = () => {
               <ThreadLoading />
             </ThreadPrimitive.If>
 
-            <ThreadPrimitive.If empty>
+            <ThreadPrimitive.If empty disabled={false}>
               <ThreadWelcome />
             </ThreadPrimitive.If>
 
@@ -91,13 +91,23 @@ const ThreadScrollToBottom: FC = () => {
 };
 
 const ThreadLoading: FC = () => {
-  const { agentLoadingProgress } = useAiloyAgentContext();
+  const { isWebGPUSupported, agentLoadingProgress } = useAiloyAgentContext();
   const loadingPercent =
     agentLoadingProgress !== undefined
       ? Math.round(
           (agentLoadingProgress.current / agentLoadingProgress.total) * 100,
         )
       : 0;
+
+  if (!isWebGPUSupported) {
+    return (
+      <div className="mx-auto my-auto flex w-full max-w-[var(--thread-max-width)] flex-grow flex-col justify-center">
+        <div className="text-2xl font-semibold">
+          Sorry, your environment does not support WebGPU.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto my-auto flex w-full max-w-[var(--thread-max-width)] flex-grow flex-col justify-center">

@@ -69,6 +69,8 @@ export function AiloyAgentProvider({
   }, []);
 
   useEffect(() => {
+    setAgent(undefined);
+
     if (!isRendered) return;
     if (modelConfig === undefined) {
       // Set default model config if not present
@@ -76,8 +78,11 @@ export function AiloyAgentProvider({
       return;
     }
 
+    if (modelConfig.type === "local" && !isWebGPUSupported) {
+      return;
+    }
+
     (async () => {
-      setAgent(undefined);
       setIsAgentLoading(true);
 
       let model: ai.LangModel;
@@ -99,7 +104,7 @@ export function AiloyAgentProvider({
       setAgentLoadingProgress(undefined);
       setIsAgentLoading(false);
     })();
-  }, [modelConfig, isRendered]);
+  }, [modelConfig, isRendered, isWebGPUSupported]);
 
   return (
     <AiloyAgentContext.Provider
