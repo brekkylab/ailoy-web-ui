@@ -41,7 +41,7 @@ export interface AddMCPServer {
 
 export interface RemoveMCPServer {
   type: "remove-mcp-server";
-  id: string;
+  url: string;
 }
 
 export interface AddMCPTool {
@@ -240,7 +240,7 @@ self.onmessage = async (e: MessageEvent<InData>) => {
   } else if (msg.type === "add-mcp-server") {
     await addMCPServer(msg.url);
   } else if (msg.type === "remove-mcp-server") {
-    removeMCPServer(msg.id);
+    removeMCPServer(msg.url);
   } else if (msg.type === "add-mcp-tool") {
     addMCPTool(msg.url, msg.name);
   } else if (msg.type === "remove-tool") {
