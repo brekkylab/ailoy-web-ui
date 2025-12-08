@@ -52,7 +52,6 @@ export interface BuiltinTool {
 }
 
 export interface MCPClient {
-  id: string;
   url: string;
 }
 
@@ -274,9 +273,18 @@ export function AiloyAgentProvider({
           type: "add-builtin-tool",
           name: tool.id,
           config: {
-            base_url: "https://web-example-proxy.ailoy.co",
+            base_url:
+              "https://web-example-proxy.ailoy.co/web-search-duckduckgo",
           },
         } as AddBuiltinTool);
+      } else if (tool.id === "web_fetch") {
+        agentWorkerRef.current?.postMessage({
+          type: "add-builtin-tool",
+          name: tool.id,
+          config: {
+            proxy_url: "https://web-example-proxy.ailoy.co/web-fetch",
+          },
+        });
       }
     }
   }, [agentInitialized, selectedBuiltinTools]);
@@ -319,17 +327,17 @@ export function AiloyAgentProvider({
       type: "add-mcp-server",
       url,
     } as AddMCPServer);
-    setMCPClients([...mcpClients, { id: url, url }]);
+    setMCPClients([...mcpClients, { url }]);
   };
 
-  const removeMCPClient = (id: string) => {
+  const removeMCPClient = (url: string) => {
     agentWorkerRef.current?.postMessage({
       type: "remove-mcp-server",
-      id,
+      url,
     } as RemoveMCPServer);
-    setMCPClients(mcpClients.filter((client) => client.id !== id));
+    setMCPClients((prev) => prev.filter((client) => client.url !== url));
     setMCPClientsStatus((prev) => {
-      const { [id]: _, ...rest } = prev;
+      const { [url]: _, ...rest } = prev;
       return rest;
     });
   };

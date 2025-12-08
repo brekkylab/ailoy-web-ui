@@ -10,8 +10,8 @@
  *
  * Learn more at https://developers.cloudflare.com/workers/
  */
-const PROXY_TARGET = "https://html.duckduckgo.com/html";
-
+const DUCKDUCKGO_URL = "https://html.duckduckgo.com/html";
+const MAX_REDIRECTS = 10;
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edge/120.0.0.0",
@@ -31,6 +31,9 @@ const USER_AGENTS = [
 
 export default {
   async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const pathname = url.pathname;
+
     // Handle CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, {
@@ -39,20 +42,36 @@ export default {
       });
     }
 
-    // Handle POST requests
-    if (request.method === "POST") {
-      return handleRequest(request);
+    if (pathname === "/web-search-duckduckgo" && request.method === "POST") {
+      return handleDuckDuckGoRequest(request);
+    }
+
+    if (pathname === "/web-fetch" && request.method === "GET") {
+      const targetUrl = url.searchParams.get("url");
+      if (!targetUrl) {
+        return new Response(
+          JSON.stringify({ error: "Missing 'url' query parameter" }),
+          {
+            status: 400,
+            headers: {
+              "Content-Type": "application/json",
+              ...getCorsHeaders(),
+            },
+          },
+        );
+      }
+      return await fetchWithRedirects(targetUrl, 0);
     }
 
     // Reject other methods
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getCorsHeaders() },
     });
   },
 };
 
-async function handleRequest(request: Request): Promise<Response> {
+async function handleDuckDuckGoRequest(request: Request): Promise<Response> {
   try {
     const body = await request.arrayBuffer();
 
@@ -61,7 +80,7 @@ async function handleRequest(request: Request): Promise<Response> {
       "Content-Type": "application/x-www-form-urlencoded",
     });
 
-    const proxyReq = new Request(PROXY_TARGET, {
+    const proxyReq = new Request(DUCKDUCKGO_URL, {
       method: "POST",
       headers: headers,
       body: body,
@@ -82,6 +101,70 @@ async function handleRequest(request: Request): Promise<Response> {
     }
 
     // Add CORS headers
+    for (const [key, value] of Object.entries(getCorsHeaders())) {
+      responseHeaders.set(key, value);
+    }
+
+    return new Response(responseBody, {
+      status: response.status,
+      headers: responseHeaders,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return new Response(JSON.stringify({ error: errorMessage }), {
+      status: 500,
+      headers: {
+        "Content-Type": "application/json",
+        ...getCorsHeaders(),
+      },
+    });
+  }
+}
+
+async function fetchWithRedirects(
+  targetUrl: string,
+  redirectCount: number,
+): Promise<Response> {
+  try {
+    if (redirectCount > MAX_REDIRECTS) {
+      return new Response(JSON.stringify({ error: "Too many redirects" }), {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+          ...getCorsHeaders(),
+        },
+      });
+    }
+
+    const headers = new Headers({
+      "User-Agent": USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)],
+    });
+
+    const response = await fetch(new Request(targetUrl, { headers }));
+
+    // Handle redirects
+    const status = response.status;
+    if (status >= 300 && status < 400) {
+      const location = response.headers.get("location");
+      if (location) {
+        const absoluteUrl = new URL(location, targetUrl).toString();
+        return await fetchWithRedirects(absoluteUrl, redirectCount + 1);
+      }
+    }
+
+    const responseBody = await response.arrayBuffer();
+
+    const responseHeaders = new Headers();
+    for (const [key, value] of response.headers.entries()) {
+      if (
+        !["transfer-encoding", "connection", "content-encoding"].includes(
+          key.toLowerCase(),
+        )
+      ) {
+        responseHeaders.set(key, value);
+      }
+    }
+
     for (const [key, value] of Object.entries(getCorsHeaders())) {
       responseHeaders.set(key, value);
     }

@@ -30,14 +30,20 @@ const BUILTIN_TOOLS: BuiltinTool[] = [
     description: "Search the web for information",
     icon: "🔍",
   },
+  {
+    id: "web_fetch",
+    name: "Fetch Webpage",
+    description: "Fetch the content from webpage url",
+    icon: "📄",
+  },
 ];
 
 const BuiltinToolListItem: FC<{ tool: BuiltinTool }> = ({ tool }) => {
   const { selectedBuiltinTools, setSelectedBuiltinTools } =
     useAiloyAgentContext();
   const isSelected = useMemo(() => {
-    return selectedBuiltinTools.find((tool) => tool.id) !== undefined;
-  }, [selectedBuiltinTools]);
+    return selectedBuiltinTools.find((t) => tool.id === t.id) !== undefined;
+  }, [selectedBuiltinTools, tool]);
 
   const handleToggleTool = (tool: BuiltinTool) => {
     if (isSelected) {
@@ -85,7 +91,7 @@ const MCPClientListItem: FC<{ client: MCPClient }> = ({ client }) => {
   } = useAiloyAgentContext();
 
   const tools = useMemo(() => {
-    return mcpTools[client.url];
+    return mcpTools[client.url] ?? [];
   }, [mcpTools, client]);
 
   const selectedMCPToolsForClient = useMemo(() => {
