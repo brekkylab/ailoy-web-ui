@@ -1,7 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-
 import type { Dispatch, SetStateAction } from "react";
-
+import { useCallback, useEffect, useState } from "react";
 import { useEventCallback, useEventListener } from "usehooks-ts";
 
 declare global {
@@ -144,9 +142,9 @@ export function useLocalStorage<T>(
     setHasMounted(true);
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: false-positive
   useEffect(() => {
     setStoredValue(readValue());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
   const handleStorageChange = useCallback(

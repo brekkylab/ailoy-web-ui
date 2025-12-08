@@ -1,22 +1,26 @@
-import { useState, useMemo, type ReactNode } from "react";
 import {
+  type AppendMessage,
   AssistantRuntimeProvider,
-  useExternalStoreRuntime,
-  useExternalMessageConverter,
   CompositeAttachmentAdapter,
   SimpleImageAttachmentAdapter,
   SimpleTextAttachmentAdapter,
-  type AppendMessage,
+  useExternalMessageConverter,
+  useExternalStoreRuntime,
 } from "@assistant-ui/react";
 import * as ai from "ailoy-web";
-import { useThreadContext } from "./thread-provider";
-import { useAiloyAgentContext } from "./ailoy-agent-provider";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+
 import {
+  type AssistantUiMessage,
   convertMessage,
   convertMessageDelta,
-  AssistantUiMessage,
   restoreMessages,
 } from "@/lib/message-converter";
+import {
+  agentStreamEventTarget,
+  useAiloyAgentContext,
+} from "./ailoy-agent-provider";
+import { useThreadContext } from "./thread-provider";
 
 export function AiloyRuntimeProvider({
   children,
@@ -26,7 +30,8 @@ export function AiloyRuntimeProvider({
   );
   const [isAnswering, setIsAnswering] = useState<boolean>(false);
 
-  const { agent, isModelLoading, isReasoning } = useAiloyAgentContext();
+  const { agentInitialized, agentRunConfig, runAgent, systemPrompt } =
+    useAiloyAgentContext();
 
   const {
     currentThreadId,
@@ -36,15 +41,62 @@ export function AiloyRuntimeProvider({
     threadListAdapter,
   } = useThreadContext();
 
-  const onNew = async (message: AppendMessage) => {
-    if (agent === undefined) throw new Error("Agent is not initialized yet");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: false-positive
+  useEffect(() => {
+    agentStreamEventTarget.addEventListener(
+      "agent-stream-delta",
+      accumulateAgentStreamDelta,
+    );
+    agentStreamEventTarget.addEventListener(
+      "agent-stream-finished",
+      onAgentStreamFinished,
+    );
 
-    let userContents: ai.Part[] = [];
+    return () => {
+      agentStreamEventTarget.removeEventListener(
+        "agent-stream-delta",
+        accumulateAgentStreamDelta,
+      );
+      agentStreamEventTarget.removeEventListener(
+        "agent-stream-finished",
+        onAgentStreamFinished,
+      );
+    };
+  }, [currentThreadId]);
+
+  let accumulated: ai.MessageDelta | null = null;
+  const accumulateAgentStreamDelta = async (e: Event) => {
+    const { delta, finish_reason } = (e as CustomEvent<ai.MessageDeltaOutput>)
+      .detail;
+
+    accumulated =
+      accumulated === null
+        ? delta
+        : ai.accumulateMessageDelta(accumulated, delta);
+    setOngoingMessage({ ...accumulated });
+
+    if (finish_reason !== undefined) {
+      const newMessage = ai.finishMessageDelta(accumulated);
+      appendThreadMessage(currentThreadId, convertMessage(newMessage));
+      setOngoingMessage(null);
+      accumulated = null;
+    }
+  };
+
+  const onAgentStreamFinished = () => {
+    setIsAnswering(false);
+  };
+
+  const onNew = async (message: AppendMessage) => {
+    if (!agentInitialized) throw new Error("Agent is not initialized yet");
+
+    const userContents: ai.Part[] = [];
 
     // Add attachments
     if (message.attachments !== undefined) {
       for (const attach of message.attachments) {
         if (attach.type === "image") {
+          // biome-ignore lint/style/noNonNullAssertion: attach should have file
           const ab = await attach.file!.arrayBuffer();
           const arr = new Uint8Array(ab);
           const imagePart = ai.imageFromBytes(arr);
@@ -70,45 +122,29 @@ export function AiloyRuntimeProvider({
       renameThread(currentThreadId, message.content[0].text.substring(0, 30));
     }
 
-    setIsAnswering(true);
-
-    let accumulated: ai.MessageDelta | null = null;
-    for await (const { delta, finish_reason } of agent.runDelta(
-      [...restoreMessages(currentThreadMessages), newMessage],
-      {
-        inference: {
-          thinkEffort: isReasoning ? "enable" : "disable",
-        },
-      },
-    )) {
-      accumulated =
-        accumulated === null
-          ? delta
-          : ai.accumulateMessageDelta(accumulated, delta);
-      setOngoingMessage({ ...accumulated });
-
-      if (finish_reason !== undefined) {
-        let newMessage = ai.finishMessageDelta(accumulated);
-        appendThreadMessage(currentThreadId, convertMessage(newMessage));
-        setOngoingMessage(null);
-        accumulated = null;
-      }
+    // Run agent with messages and config
+    let msgs = [...restoreMessages(currentThreadMessages), newMessage];
+    if (systemPrompt !== "") {
+      msgs = [
+        { role: "system", contents: [{ type: "text", text: systemPrompt }] },
+        ...msgs,
+      ];
     }
-    setIsAnswering(false);
+    runAgent(msgs, agentRunConfig);
+    setIsAnswering(true);
   };
 
   const convertedMessages: AssistantUiMessage[] = useMemo(() => {
     let messages = currentThreadMessages;
     if (ongoingMessage !== null) {
-      let convertedDelta = convertMessageDelta(ongoingMessage);
+      const convertedDelta = convertMessageDelta(ongoingMessage);
       messages = [...messages, convertedDelta];
     }
     return messages;
   }, [currentThreadMessages, ongoingMessage]);
 
   const runtime = useExternalStoreRuntime({
-    isLoading: isModelLoading,
-    isDisabled: agent === undefined,
+    isDisabled: !agentInitialized,
     isRunning: isAnswering,
     messages: useExternalMessageConverter({
       messages: convertedMessages,

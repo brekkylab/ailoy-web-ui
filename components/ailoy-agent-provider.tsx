@@ -1,12 +1,27 @@
+import * as ai from "ailoy-web";
 import {
   createContext,
-  ReactNode,
+  type ReactNode,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
-import * as ai from "ailoy-web";
+
 import { useLocalStorage } from "@/hooks/use-local-storage";
+import type {
+  AddBuiltinTool,
+  AddMCPServer,
+  AddMCPTool,
+  ClearTools,
+  InitializeApiAgent,
+  InitializeLocalAgent,
+  MCPServerRegistered,
+  OutData,
+  RemoveMCPServer,
+  RemoveTool,
+  RunAgent,
+} from "@/workers/agent.worker";
 
 export interface AiloyLocalLMConfig {
   type: "local";
@@ -27,18 +42,29 @@ const emptyApiKeys = {
   Gemini: undefined,
   Claude: undefined,
   Grok: undefined,
-};
+} as const;
 
-export interface Tool {
+export interface BuiltinTool {
   id: string;
   name: string;
   description: string;
   icon: string;
 }
 
+export interface MCPClient {
+  id: string;
+  url: string;
+}
+
+class AgentStreamEventTarget extends EventTarget {}
+export const agentStreamEventTarget = new AgentStreamEventTarget();
+
+class MCPEventTarget extends EventTarget {}
+export const mcpEventTarget = new MCPEventTarget();
+
 const AiloyAgentContext = createContext<{
   isWebGPUSupported: boolean;
-  agent: ai.Agent | undefined;
+  agentInitialized: boolean;
   isModelLoading: boolean;
   modelLoadingProgress: ai.CacheProgress | undefined;
   downloadedModels: string[];
@@ -47,13 +73,23 @@ const AiloyAgentContext = createContext<{
   setSelectedModel: (config: AiloyLMConfig | undefined) => void;
   apiKeys: APIKeys;
   setApiKey: (provider: keyof APIKeys, key: string | undefined) => void;
-  isReasoning: boolean;
-  setIsReasoning: (thinking: boolean) => void;
-  selectedTools: Tool[];
-  setSelectedTools: (tools: Tool[]) => void;
+  agentRunConfig: ai.AgentConfig;
+  setAgentRunConfig: (config: ai.AgentConfig) => void;
+  systemPrompt: string;
+  setSystemPrompt: (prompt: string) => void;
+  selectedBuiltinTools: BuiltinTool[];
+  setSelectedBuiltinTools: (tools: BuiltinTool[]) => void;
+  mcpClients: MCPClient[];
+  addMCPClient: (url: string) => void;
+  removeMCPClient: (url: string) => void;
+  mcpTools: Record<string, ai.ToolDesc[]>;
+  selectedMCPTools: Record<string, string[]>;
+  addMCPTool: (url: string, name: string) => void;
+  removeMCPTool: (url: string, name: string) => void;
+  runAgent: (messages: ai.Message[], config?: ai.AgentConfig) => void;
 }>({
   isWebGPUSupported: false,
-  agent: undefined,
+  agentInitialized: false,
   isModelLoading: false,
   modelLoadingProgress: undefined,
   downloadedModels: [],
@@ -62,10 +98,20 @@ const AiloyAgentContext = createContext<{
   setSelectedModel: () => {},
   apiKeys: emptyApiKeys,
   setApiKey: () => {},
-  isReasoning: false,
-  setIsReasoning: () => {},
-  selectedTools: [],
-  setSelectedTools: () => {},
+  agentRunConfig: {},
+  setAgentRunConfig: () => {},
+  systemPrompt: "",
+  setSystemPrompt: () => {},
+  selectedBuiltinTools: [],
+  setSelectedBuiltinTools: () => {},
+  mcpClients: [],
+  addMCPClient: () => {},
+  removeMCPClient: () => {},
+  mcpTools: {},
+  selectedMCPTools: {},
+  addMCPTool: () => {},
+  removeMCPTool: () => {},
+  runAgent: () => {},
 });
 
 export function AiloyAgentProvider({
@@ -83,18 +129,44 @@ export function AiloyAgentProvider({
     "ailoy/apiKeys",
     emptyApiKeys,
   );
-  const [selectedTools, setSelectedTools] = useLocalStorage<Tool[]>(
-    "ailoy/selectedTools",
+
+  const [selectedBuiltinTools, setSelectedBuiltinTools] = useLocalStorage<
+    BuiltinTool[]
+  >("ailoy/selectedBuiltinTools", []);
+
+  const [mcpClients, setMCPClients] = useLocalStorage<MCPClient[]>(
+    "ailoy/mcpClients",
     [],
   );
+  const [mcpClientsStatus, setMCPClientsStatus] = useState<
+    Record<string, "initializing" | "initialized">
+  >({});
+  const [mcpTools, setMCPTools] = useLocalStorage<
+    Record<string, ai.ToolDesc[]>
+  >("ailoy/mcpTools", {});
+  const [selectedMCPTools, setSelectedMCPTools] = useLocalStorage<
+    Record<string, string[]>
+  >("ailoy/selectedMCPTools", {});
 
-  const [agent, setAgent] = useState<ai.Agent | undefined>(undefined);
+  const [agentRunConfig, setAgentRunConfig] = useLocalStorage<ai.AgentConfig>(
+    "ailoy/agentRunConfig",
+    {},
+  );
+  const [systemPrompt, setSystemPrompt] = useLocalStorage<string>(
+    "ailoy/systemPrompt",
+    "",
+  );
+
+  const [agentInitialized, setAgentInitialized] = useState<boolean>(false);
   const [isModelLoading, setIsModelLoading] = useState<boolean>(false);
   const [modelLoadingProgress, setModelLoadingProgress] = useState<
     ai.CacheProgress | undefined
   >(undefined);
-  const [isReasoning, setIsReasoning] = useState<boolean>(false);
 
+  const agentWorkerRef = useRef<Worker | null>(null);
+  const [agentWorkerReady, setAgentWorkerReady] = useState<boolean>(false);
+
+  // set isWebGPUSupported
   useEffect(() => {
     (async () => {
       const { supported } = await ai.isWebGPUSupported();
@@ -102,10 +174,67 @@ export function AiloyAgentProvider({
     })();
   }, []);
 
+  // set agent worker
+  // biome-ignore lint/correctness/useExhaustiveDependencies: initialize worker only once
   useEffect(() => {
-    setAgent(undefined);
+    const worker = new Worker(
+      new URL("@/workers/agent.worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    agentWorkerRef.current = worker;
+    agentWorkerRef.current.onmessage = async (e: MessageEvent<OutData>) => {
+      const msg = e.data;
+      if (msg.type === "worker-ready") {
+        setAgentWorkerReady(true);
+      } else if (msg.type === "langmodel-init-progress") {
+        setModelLoadingProgress(msg.progress);
+      } else if (msg.type === "agent-ready") {
+        setModelLoadingProgress(undefined);
+        setIsModelLoading(false);
+        setAgentInitialized(true);
+      } else if (msg.type === "agent-stream-delta") {
+        agentStreamEventTarget.dispatchEvent(
+          new CustomEvent<ai.MessageDeltaOutput>("agent-stream-delta", {
+            detail: msg.output,
+          }),
+        );
+      } else if (msg.type === "agent-stream-finished") {
+        agentStreamEventTarget.dispatchEvent(
+          new CustomEvent("agent-stream-finished"),
+        );
+      } else if (msg.type === "mcp-server-registered") {
+        // Update tools of MCP client
+        setMCPTools((prev) => ({
+          ...prev,
+          [msg.url]: msg.tools,
+        }));
+        setMCPClientsStatus((prev) => ({
+          ...prev,
+          [msg.url]: "initialized",
+        }));
+        mcpEventTarget.dispatchEvent(
+          new CustomEvent<MCPServerRegistered>("mcp-server-registered", {
+            detail: msg,
+          }),
+        );
+      } else if (msg.type === "error") {
+        console.error(msg.error);
+      }
+    };
+    return () => {
+      if (agentWorkerRef.current) {
+        agentWorkerRef.current.terminate();
+      }
+    };
+  }, []);
 
-    if (selectedModel === undefined) return;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: false-positive
+  useEffect(() => {
+    if (!agentWorkerReady) return;
+
+    if (selectedModel === undefined) {
+      return;
+    }
     if (selectedModel.type === "local" && !isWebGPUSupported) {
       return;
     }
@@ -116,58 +245,135 @@ export function AiloyAgentProvider({
       return;
     }
 
-    (async () => {
-      setIsModelLoading(true);
-
-      let model: ai.LangModel;
-      if (selectedModel.type === "local") {
-        model = await ai.LangModel.newLocal(selectedModel.modelName, {
-          progressCallback: setModelLoadingProgress,
-        });
-      } else {
-        model = await ai.LangModel.newStreamAPI(
-          selectedModel.spec,
-          selectedModel.modelName,
-          apiKeys[selectedModel.spec]!,
-        );
-      }
-
-      const agent = new ai.Agent(model);
-      setAgent(agent);
-
-      setModelLoadingProgress(undefined);
-      setIsModelLoading(false);
-    })();
-  }, [selectedModel, apiKeys, isWebGPUSupported]);
+    setAgentInitialized(false);
+    setIsModelLoading(true);
+    if (selectedModel.type === "local") {
+      agentWorkerRef.current?.postMessage({
+        type: "initialize-local-agent",
+        config: selectedModel,
+      } as InitializeLocalAgent);
+    } else {
+      agentWorkerRef.current?.postMessage({
+        type: "initialize-api-agent",
+        config: selectedModel,
+        apiKey: apiKeys[selectedModel.spec],
+      } as InitializeApiAgent);
+    }
+  }, [selectedModel, isWebGPUSupported, agentWorkerReady]);
 
   useEffect(() => {
-    if (agent === undefined) return;
+    if (!agentInitialized) return;
 
-    // TODO: add clearTools
-    // agent.clearTools();
+    agentWorkerRef.current?.postMessage({
+      type: "clear-tools",
+    } as ClearTools);
 
-    for (const tool of selectedTools) {
-      console.log("tool: ", tool);
+    for (const tool of selectedBuiltinTools) {
       if (tool.id === "web_search_duckduckgo") {
-        console.log("adding web_search_duckduckgo tool");
-        const tool = ai.Tool.newBuiltin("web_search_duckduckgo", {
-          base_url: "https://web-example-proxy.ailoy.co",
-        });
-        agent.addTool(tool);
+        agentWorkerRef.current?.postMessage({
+          type: "add-builtin-tool",
+          name: tool.id,
+          config: {
+            base_url: "https://web-example-proxy.ailoy.co",
+          },
+        } as AddBuiltinTool);
       }
     }
-    setAgent(agent);
-  }, [agent, selectedTools]);
+  }, [agentInitialized, selectedBuiltinTools]);
+
+  // Initialize MCP clients after worker is initialized
+  useEffect(() => {
+    if (!agentWorkerReady) return;
+    for (const client of mcpClients) {
+      if (mcpClientsStatus[client.url] === undefined) {
+        agentWorkerRef.current?.postMessage({
+          type: "add-mcp-server",
+          url: client.url,
+        } as AddMCPServer);
+        mcpClientsStatus[client.url] = "initializing";
+      }
+    }
+  }, [agentWorkerReady, mcpClients, mcpClientsStatus]);
+
+  // Add selected MCP tools after agent is initialized
+  useEffect(() => {
+    if (!agentInitialized) return;
+
+    for (const client of mcpClients) {
+      for (const tool of selectedMCPTools[client.url] ?? []) {
+        agentWorkerRef.current?.postMessage({
+          type: "add-mcp-tool",
+          url: client.url,
+          name: tool,
+        } as AddMCPTool);
+      }
+    }
+  }, [agentInitialized, mcpClients, selectedMCPTools]);
 
   const setApiKey = (provider: keyof APIKeys, key: string | undefined) => {
     setApiKeys((prev) => ({ ...prev, [provider]: key }));
+  };
+
+  const addMCPClient = (url: string) => {
+    agentWorkerRef.current?.postMessage({
+      type: "add-mcp-server",
+      url,
+    } as AddMCPServer);
+    setMCPClients([...mcpClients, { id: url, url }]);
+  };
+
+  const removeMCPClient = (id: string) => {
+    agentWorkerRef.current?.postMessage({
+      type: "remove-mcp-server",
+      id,
+    } as RemoveMCPServer);
+    setMCPClients(mcpClients.filter((client) => client.id !== id));
+    setMCPClientsStatus((prev) => {
+      const { [id]: _, ...rest } = prev;
+      return rest;
+    });
+  };
+
+  const addMCPTool = (url: string, name: string) => {
+    setSelectedMCPTools({
+      ...selectedMCPTools,
+      [url]:
+        selectedMCPTools[url] !== undefined
+          ? [...selectedMCPTools[url], name]
+          : [name],
+    });
+    agentWorkerRef.current?.postMessage({
+      type: "add-mcp-tool",
+      url,
+      name,
+    } as AddMCPTool);
+  };
+
+  const removeMCPTool = (url: string, name: string) => {
+    setSelectedMCPTools({
+      ...selectedMCPTools,
+      [url]: selectedMCPTools[url]?.filter((t) => t !== name),
+    });
+    agentWorkerRef.current?.postMessage({
+      type: "remove-tool",
+      name,
+    } as RemoveTool);
+  };
+
+  const runAgent = (messages: ai.Message[], config?: ai.AgentConfig) => {
+    if (!agentInitialized) return;
+    agentWorkerRef.current?.postMessage({
+      type: "run-agent",
+      messages,
+      config,
+    } as RunAgent);
   };
 
   return (
     <AiloyAgentContext.Provider
       value={{
         isWebGPUSupported,
-        agent,
+        agentInitialized,
         isModelLoading,
         modelLoadingProgress,
         downloadedModels,
@@ -176,10 +382,20 @@ export function AiloyAgentProvider({
         setSelectedModel,
         apiKeys,
         setApiKey,
-        isReasoning,
-        setIsReasoning,
-        selectedTools,
-        setSelectedTools,
+        agentRunConfig,
+        setAgentRunConfig,
+        systemPrompt,
+        setSystemPrompt,
+        selectedBuiltinTools,
+        setSelectedBuiltinTools,
+        mcpClients,
+        addMCPClient,
+        removeMCPClient,
+        mcpTools,
+        selectedMCPTools,
+        addMCPTool,
+        removeMCPTool,
+        runAgent,
       }}
     >
       {children}

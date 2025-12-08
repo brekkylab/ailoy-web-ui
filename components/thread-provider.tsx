@@ -1,17 +1,18 @@
+import type {
+  ExternalStoreThreadData,
+  ExternalStoreThreadListAdapter,
+} from "@assistant-ui/react";
 import {
   createContext,
-  ReactNode,
+  type ReactNode,
   useContext,
   useEffect,
   useMemo,
   useState,
 } from "react";
-import {
-  ExternalStoreThreadData,
-  ExternalStoreThreadListAdapter,
-} from "@assistant-ui/react";
-import { useAiloyAgentContext } from "./ailoy-agent-provider";
+
 import type { AssistantUiMessage } from "@/lib/message-converter";
+import { useAiloyAgentContext } from "./ailoy-agent-provider";
 
 // Create a context for thread management
 const ThreadContext = createContext<{
@@ -69,6 +70,7 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
 
   const { isModelLoading, selectedModel } = useAiloyAgentContext();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: threads should be cleared on selectedModel changes
   useEffect(() => {
     // Clear all threads whenever modelConfig is changed
     setThreadList([{ id: "default", status: "regular", title: "New Chat" }]);

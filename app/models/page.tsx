@@ -1,10 +1,16 @@
 "use client";
 
+import * as ai from "ailoy-web";
+import { Download, Key, Trash2 } from "lucide-react";
+import type { FC } from "react";
+import { useEffect, useMemo, useState } from "react";
+
 import {
-  AiloyAPILMConfig,
-  AiloyLocalLMConfig,
+  type AiloyAPILMConfig,
+  type AiloyLocalLMConfig,
   useAiloyAgentContext,
 } from "@/components/ailoy-agent-provider";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -13,14 +19,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { useEffect, useMemo, useState } from "react";
-import type { FC } from "react";
-import * as ai from "ailoy-web";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { Download, Trash2, Key } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Switch } from "@/components/ui/switch";
 
 const LocalModelListItem: FC<{
   modelName: string;
@@ -37,13 +39,13 @@ const LocalModelListItem: FC<{
 
   const downloaded = useMemo(() => {
     return downloadedModels.includes(modelName);
-  }, [downloadedModels]);
+  }, [downloadedModels, modelName]);
   const [downloading, setDownloading] = useState<boolean>(false);
   const [progress, setProgress] = useState<number>(0);
 
   const isCurrentModelLoading = useMemo(() => {
     return selectedModel?.modelName === modelName && isModelLoading;
-  }, [selectedModel, isModelLoading]);
+  }, [selectedModel, isModelLoading, modelName]);
 
   const handleDownloadModel = async () => {
     setProgress(0);
@@ -107,7 +109,9 @@ const LocalModelListItem: FC<{
               className="cursor-pointer gap-2"
             >
               <Download size={16} />
-              {downloading ? "Downloading..." : "Download"}
+              <span className="hidden sm:inline">
+                {downloading ? "Downloading..." : "Download"}
+              </span>
             </Button>
           ) : (
             <Button
@@ -117,7 +121,7 @@ const LocalModelListItem: FC<{
               className="cursor-pointer gap-2"
             >
               <Trash2 size={16} />
-              Clear
+              <span className="hidden sm:inline">Clear</span>
             </Button>
           )}
         </div>
@@ -180,7 +184,9 @@ const APIModelListItem: FC<{
             suppressHydrationWarning
           >
             <Key size={16} />
-            {isSelectable ? "Update Key" : "API Key"}
+            <span className="hidden sm:inline">
+              {isSelectable ? "Update Key" : "API Key"}
+            </span>
           </Button>
         </DialogTrigger>
         <DialogContent>
@@ -234,21 +240,35 @@ const API_MODELS: AiloyAPILMConfig[] = [
 ];
 
 export default function ModelsPage() {
-  const { selectedModel, setSelectedModel } = useAiloyAgentContext();
+  const {
+    selectedModel,
+    setSelectedModel,
+    agentRunConfig,
+    setAgentRunConfig,
+    systemPrompt,
+    setSystemPrompt,
+  } = useAiloyAgentContext();
 
   const handleSelectModel = (modelName: string) => {
+    // biome-ignore lint/style/noNonNullAssertion: config always exists
     const config = [...LOCAL_MODELS, ...API_MODELS].find(
       (config) => config.modelName === modelName,
     )!;
     setSelectedModel(config);
   };
 
-  useEffect(() => {
-    console.log(selectedModel);
-  }, [selectedModel]);
+  const handleReasoningToggle = (reasoning: boolean) => {
+    setAgentRunConfig({
+      ...agentRunConfig,
+      inference: {
+        ...agentRunConfig.inference,
+        thinkEffort: reasoning ? "enable" : "disable",
+      },
+    });
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
+    <div className="h-full overflow-y-auto bg-gray-50 p-8">
       <div className="mx-auto max-w-4xl">
         <h1 className="mb-8 text-3xl font-bold text-gray-900">Models</h1>
 
@@ -274,7 +294,7 @@ export default function ModelsPage() {
           </div>
 
           {/* API Models */}
-          <div>
+          <div className="mb-8">
             <h3 className="mb-4 text-lg font-bold text-gray-800">API Models</h3>
             <div className="space-y-3">
               <RadioGroup
@@ -285,6 +305,37 @@ export default function ModelsPage() {
                   <APIModelListItem key={config.modelName} config={config} />
                 ))}
               </RadioGroup>
+            </div>
+          </div>
+
+          {/* Agent Run Config */}
+          <div>
+            <h3 className="mb-4 text-lg font-bold text-gray-800">
+              Agent Configuration
+            </h3>
+            <div className="space-y-4">
+              {/* Reasoning */}
+              <div className="flex gap-4">
+                <Label htmlFor="reasoning">Reasoning</Label>
+                <Switch
+                  id="reasoning"
+                  className="cursor-pointer"
+                  checked={agentRunConfig.inference?.thinkEffort === "enable"}
+                  onCheckedChange={handleReasoningToggle}
+                />
+              </div>
+
+              {/* System Prompt */}
+              <div className="space-y-2">
+                <Label htmlFor="system-prompt">System Prompt</Label>
+                <Input
+                  id="system-prompt"
+                  className="w-full"
+                  placeholder="Write the system prompt for your agent"
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                />
+              </div>
             </div>
           </div>
         </div>

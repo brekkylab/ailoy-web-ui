@@ -1,14 +1,15 @@
-import {
-  type ThreadMessageLike,
-  type ThreadMessage,
-  type ImageMessagePart,
-  type TextMessagePart,
-  type ReasoningMessagePart,
-  type SourceMessagePart,
-  type FileMessagePart,
-  type Unstable_AudioMessagePart,
+/** biome-ignore-all lint/suspicious/noExplicitAny: false-positive */
+import type {
+  FileMessagePart,
+  ImageMessagePart,
+  ReasoningMessagePart,
+  SourceMessagePart,
+  TextMessagePart,
+  ThreadMessage,
+  ThreadMessageLike,
+  Unstable_AudioMessagePart,
 } from "@assistant-ui/react";
-import * as ai from "ailoy-web";
+import type * as ai from "ailoy-web";
 
 type ReadonlyJSONValue =
   | null
@@ -69,8 +70,8 @@ export function convertContentPart(part: ai.Part): AssistantUiMessagePart {
     case "text":
       return { type: "text", text: part.text };
     case "value":
-      return { type: "text", text: part.value!.toString() };
-    case "image":
+      return { type: "text", text: part.value?.toString() ?? "" };
+    case "image": {
       let imageUrl: string;
       if (part.image.type === "binary") {
         imageUrl = imageDataToBase64(part.image.data);
@@ -78,8 +79,9 @@ export function convertContentPart(part: ai.Part): AssistantUiMessagePart {
         imageUrl = part.image.url;
       }
       return { type: "image", image: imageUrl };
-    case "function":
-      let converted: AssistantUiToolCallPart = {
+    }
+    case "function": {
+      const converted: AssistantUiToolCallPart = {
         type: "tool-call",
         toolCallId: part.id ?? "",
         toolName: part.function.name,
@@ -90,6 +92,7 @@ export function convertContentPart(part: ai.Part): AssistantUiMessagePart {
         converted.args = part.function.arguments as ReadonlyJSONObject;
       }
       return converted;
+    }
   }
 }
 
@@ -105,7 +108,7 @@ export function convertMessage(message: ai.Message): AssistantUiMessage {
         role: "user",
         content: message.contents.map((part) => convertContentPart(part)),
       };
-    case "assistant":
+    case "assistant": {
       let contents: AssistantUiMessagePart[] = [];
       if (message.thinking) {
         contents.push({
@@ -127,7 +130,8 @@ export function convertMessage(message: ai.Message): AssistantUiMessage {
         role: "assistant",
         content: contents,
       };
-    case "tool":
+    }
+    case "tool": {
       const part = message.contents[0];
       let toolResult: string;
       if (part.type === "text") {
@@ -143,6 +147,7 @@ export function convertMessage(message: ai.Message): AssistantUiMessage {
         toolCallId: message.id ?? "",
         result: toolResult,
       };
+    }
   }
 }
 
@@ -158,7 +163,7 @@ export function convertContentPartDelta(
     case "value":
       return {
         type: "text",
-        text: delta.value!.toString(),
+        text: delta.value?.toString() ?? "",
       };
     case "function":
       if (delta.function.type === "verbatim") {
@@ -184,7 +189,7 @@ export function convertMessageDelta(
 ): AssistantUiMessage {
   // MessageDelta is generated only for "assistant" and "tool" role.
   switch (delta.role) {
-    case "assistant":
+    case "assistant": {
       let contents: AssistantUiMessagePart[] = [];
       if (delta.thinking) {
         contents.push({
@@ -208,8 +213,9 @@ export function convertMessageDelta(
         role: "assistant",
         content: contents,
       };
-    case "tool":
-      let toolResult = (
+    }
+    case "tool": {
+      const toolResult = (
         convertContentPartDelta(delta.contents[0]) as TextMessagePart
       ).text;
       return {
@@ -217,6 +223,7 @@ export function convertMessageDelta(
         toolCallId: delta.id ?? "",
         result: toolResult,
       };
+    }
     default:
       // Consider this case as an empty assistant message
       return {
@@ -227,14 +234,14 @@ export function convertMessageDelta(
 }
 
 export function restoreMessages(messages: AssistantUiMessage[]): ai.Message[] {
-  let restored: ai.Message[] = [];
+  const restored: ai.Message[] = [];
   for (const msg of messages) {
     // Skip tool results
     if (msg.role === "tool") {
       continue;
     }
 
-    let contents: ai.Part[] = [];
+    const contents: ai.Part[] = [];
     for (const content of msg.content) {
       if (typeof content === "string") {
         contents.push({ type: "text", text: content });
