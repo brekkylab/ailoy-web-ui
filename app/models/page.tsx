@@ -254,6 +254,7 @@ export default function ModelsPage() {
     setAgentRunConfig,
     systemPrompt,
     setSystemPrompt,
+    isWebGPUSupported,
   } = useAiloyAgentContext();
 
   const handleSelectModel = (modelName: string) => {
@@ -297,6 +298,12 @@ export default function ModelsPage() {
                   />
                 ))}
               </RadioGroup>
+              {!isWebGPUSupported && (
+                <p className="text-red-600">
+                  Your environment does not support WebGPU acceleration. Try
+                  using API models instead.
+                </p>
+              )}
             </div>
           </div>
 
