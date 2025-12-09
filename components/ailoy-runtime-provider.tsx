@@ -8,7 +8,13 @@ import {
   useExternalStoreRuntime,
 } from "@assistant-ui/react";
 import * as ai from "ailoy-web";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import {
   type AssistantUiMessage,
@@ -73,6 +79,7 @@ export function AiloyRuntimeProvider({
       accumulated === null
         ? delta
         : ai.accumulateMessageDelta(accumulated, delta);
+
     setOngoingMessage({ ...accumulated });
 
     if (finish_reason !== undefined) {
@@ -87,52 +94,64 @@ export function AiloyRuntimeProvider({
     setIsAnswering(false);
   };
 
-  const onNew = async (message: AppendMessage) => {
-    if (!agentInitialized) throw new Error("Agent is not initialized yet");
+  const onNew = useCallback(
+    async (message: AppendMessage) => {
+      if (!agentInitialized) throw new Error("Agent is not initialized yet");
 
-    const userContents: ai.Part[] = [];
+      const userContents: ai.Part[] = [];
 
-    // Add attachments
-    if (message.attachments !== undefined) {
-      for (const attach of message.attachments) {
-        if (attach.type === "image") {
-          // biome-ignore lint/style/noNonNullAssertion: attach should have file
-          const ab = await attach.file!.arrayBuffer();
-          const arr = new Uint8Array(ab);
-          const imagePart = ai.imageFromBytes(arr);
-          userContents.push(imagePart);
+      // Add attachments
+      if (message.attachments !== undefined) {
+        for (const attach of message.attachments) {
+          if (attach.type === "image") {
+            // biome-ignore lint/style/noNonNullAssertion: attach should have file
+            const ab = await attach.file!.arrayBuffer();
+            const arr = new Uint8Array(ab);
+            const imagePart = ai.imageFromBytes(arr);
+            userContents.push(imagePart);
+          }
+          // other types are skipped
         }
-        // other types are skipped
       }
-    }
 
-    // Add text prompt
-    if (message.content[0]?.type !== "text")
-      throw new Error("Only text messages are supported");
-    userContents.push({ type: "text", text: message.content[0].text });
+      // Add text prompt
+      if (message.content[0]?.type !== "text")
+        throw new Error("Only text messages are supported");
+      userContents.push({ type: "text", text: message.content[0].text });
 
-    // Set messages
-    const newMessage: ai.Message = {
-      role: "user",
-      contents: userContents,
-    };
-    appendThreadMessage(currentThreadId, convertMessage(newMessage));
-    // Rename thread if this is a first message in this thread
-    if (currentThreadMessages.length === 0) {
-      renameThread(currentThreadId, message.content[0].text.substring(0, 30));
-    }
+      // Set messages
+      const newMessage: ai.Message = {
+        role: "user",
+        contents: userContents,
+      };
+      appendThreadMessage(currentThreadId, convertMessage(newMessage));
+      // Rename thread if this is a first message in this thread
+      if (currentThreadMessages.length === 0) {
+        renameThread(currentThreadId, message.content[0].text.substring(0, 30));
+      }
 
-    // Run agent with messages and config
-    let msgs = [...restoreMessages(currentThreadMessages), newMessage];
-    if (systemPrompt !== "") {
-      msgs = [
-        { role: "system", contents: [{ type: "text", text: systemPrompt }] },
-        ...msgs,
-      ];
-    }
-    runAgent(msgs, agentRunConfig);
-    setIsAnswering(true);
-  };
+      // Run agent with messages and config
+      let msgs = [...restoreMessages(currentThreadMessages), newMessage];
+      if (systemPrompt !== "") {
+        msgs = [
+          { role: "system", contents: [{ type: "text", text: systemPrompt }] },
+          ...msgs,
+        ];
+      }
+      runAgent(msgs, agentRunConfig);
+      setIsAnswering(true);
+    },
+    [
+      agentInitialized,
+      currentThreadId,
+      currentThreadMessages,
+      agentRunConfig,
+      systemPrompt,
+      appendThreadMessage,
+      renameThread,
+      runAgent,
+    ],
+  );
 
   const convertedMessages: AssistantUiMessage[] = useMemo(() => {
     let messages = currentThreadMessages;

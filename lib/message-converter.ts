@@ -83,7 +83,7 @@ export function convertContentPart(part: ai.Part): AssistantUiMessagePart {
     case "function": {
       const converted: AssistantUiToolCallPart = {
         type: "tool-call",
-        toolCallId: part.id ?? "",
+        toolCallId: part.id,
         toolName: part.function.name,
       };
       if (typeof part.function.arguments === "string") {
@@ -110,22 +110,25 @@ export function convertMessage(message: ai.Message): AssistantUiMessage {
       };
     case "assistant": {
       let contents: AssistantUiMessagePart[] = [];
+      // Insert reasoning parts first
       if (message.thinking) {
         contents.push({
           type: "reasoning",
           text: message.thinking,
         });
       }
+      // Insert contents
+      contents = [
+        ...contents,
+        ...message.contents.map((part) => convertContentPart(part)),
+      ];
+      // Insert tool calls after contents
       if (message.tool_calls && message.tool_calls.length > 0) {
         contents = [
           ...contents,
           ...message.tool_calls.map((toolCall) => convertContentPart(toolCall)),
         ];
       }
-      contents = [
-        ...contents,
-        ...message.contents.map((part) => convertContentPart(part)),
-      ];
       return {
         role: "assistant",
         content: contents,
@@ -144,7 +147,8 @@ export function convertMessage(message: ai.Message): AssistantUiMessage {
 
       return {
         role: "tool",
-        toolCallId: message.id ?? "",
+        // biome-ignore lint/style/noNonNullAssertion: id must exist in tool result message
+        toolCallId: message.id!,
         result: toolResult,
       };
     }
@@ -191,12 +195,19 @@ export function convertMessageDelta(
   switch (delta.role) {
     case "assistant": {
       let contents: AssistantUiMessagePart[] = [];
+      // Insert reasoning parts first
       if (delta.thinking) {
         contents.push({
           type: "reasoning",
           text: delta.thinking,
         });
       }
+      // Insert contents
+      contents = [
+        ...contents,
+        ...delta.contents.map((part) => convertContentPartDelta(part)),
+      ];
+      // Insert tool calls after contents
       if (delta.tool_calls.length > 0) {
         contents = [
           ...contents,
@@ -205,10 +216,6 @@ export function convertMessageDelta(
           ),
         ];
       }
-      contents = [
-        ...contents,
-        ...delta.contents.map((part) => convertContentPartDelta(part)),
-      ];
       return {
         role: "assistant",
         content: contents,
@@ -220,7 +227,8 @@ export function convertMessageDelta(
       ).text;
       return {
         role: "tool",
-        toolCallId: delta.id ?? "",
+        // biome-ignore lint/style/noNonNullAssertion: id must exist in tool result message
+        toolCallId: delta.id!,
         result: toolResult,
       };
     }
