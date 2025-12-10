@@ -1,5 +1,6 @@
 "use client";
 
+import { GoogleAnalytics } from "@next/third-parties/google";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { AiloyAgentProvider } from "@/components/ailoy-agent-provider";
@@ -68,6 +69,7 @@ export default function RootLayout({
           </ThreadProvider>
         </AiloyAgentProvider>
       </body>
+      <GoogleAnalytics gaId="G-YD06F47LN4" />
     </html>
   );
 }
