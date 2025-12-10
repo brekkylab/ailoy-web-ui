@@ -2,4 +2,4 @@
 
 touch ./out/.nojekyll
 
-echo "web-example.ailoy.co" > ./out/CNAME
+echo "webui.ailoy.co" > ./out/CNAME
