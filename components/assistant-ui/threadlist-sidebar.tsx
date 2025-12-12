@@ -1,10 +1,19 @@
-import { BookOpenText, Brain, Bug, MessageSquare, Wrench } from "lucide-react";
+import { Brain, Mail, MessageSquare, Wrench } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import type * as React from "react";
+import { useTheme } from "next-themes";
+import * as React from "react";
 
 import { ThreadList } from "@/components/assistant-ui/thread-list";
+import { Icons } from "@/components/icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Sidebar,
   SidebarContent,
@@ -17,6 +26,70 @@ import {
   SidebarSeparator,
   useSidebar,
 } from "@/components/ui/sidebar";
+
+const ContactsButton: React.FC = () => {
+  const [isMounted, setIsMounted] = React.useState(false);
+  const { theme } = useTheme();
+
+  React.useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  if (!isMounted) {
+    return null;
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <SidebarMenuButton size="lg" asChild className="cursor-pointer">
+          <div>
+            <div className="aui-sidebar-footer-icon-wrapper flex aspect-square size-8 items-center justify-center">
+              <img
+                src={`/img/brekkylab-logo-${theme === "light" ? "black" : "white"}.png`}
+                alt="brekkylab"
+              />
+            </div>
+            <div className="aui-sidebar-footer-heading flex flex-col gap-0.5 leading-none text-muted-foreground">
+              <p>Need a help?</p>
+              <p>
+                Contact to{" "}
+                <span className=" font-semibold text-accent-foreground">
+                  BrekkyLab
+                </span>
+              </p>
+            </div>
+          </div>
+        </SidebarMenuButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <DropdownMenuGroup>
+          <Link href="mailto:contact@brekkylab.com" target="_blank">
+            <DropdownMenuItem>
+              <Mail className="size-4" />
+              Email
+            </DropdownMenuItem>
+          </Link>
+          <Link href="https://discord.gg/27rx3EJy3P" target="_blank">
+            <DropdownMenuItem>
+              <Icons.discord className="h-[1.5rem] w-[1.5rem] scale-100" />
+              Discord
+            </DropdownMenuItem>
+          </Link>
+          <Link
+            href="https://github.com/brekkylab/ailoy/issues"
+            target="_blank"
+          >
+            <DropdownMenuItem>
+              <Icons.github className="h-[1.5rem] w-[1.5rem] scale-100" />
+              Github Issues
+            </DropdownMenuItem>
+          </Link>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+};
 
 export function ThreadListSidebar({
   ...props
@@ -36,8 +109,12 @@ export function ThreadListSidebar({
         <div className="aui-sidebar-header-content flex items-center justify-between">
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton size="lg" asChild>
-                <Link href="/">
+              <SidebarMenuButton
+                size="lg"
+                asChild
+                onClick={() => handleMenuClicked("/")}
+              >
+                <div>
                   <Image
                     src="https://brekkylab.github.io/ailoy/img/logo.png"
                     width={32}
@@ -49,7 +126,7 @@ export function ThreadListSidebar({
                       Ailoy Web UI
                     </span>
                   </div>
-                </Link>
+                </div>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -91,32 +168,16 @@ export function ThreadListSidebar({
       <SidebarFooter className="aui-sidebar-footer border-t">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <Link
-                href="https://github.com/brekkylab/ailoy/issues"
-                target="_blank"
-              >
-                <div className="aui-sidebar-footer-icon-wrapper flex aspect-square size-8 items-center justify-center rounded-lg border border-sidebar-border text-sidebar-foreground">
-                  <Bug className="aui-sidebar-footer-icon size-4" />
-                </div>
-                <div className="aui-sidebar-footer-heading flex flex-col gap-0.5 leading-none text-muted-foreground">
-                  <p>Have any troubles?</p>
-                  <span>
-                    Leave an{" "}
-                    <span className="text-accent-foreground font-bold">
-                      issue
-                    </span>{" "}
-                    here
-                  </span>
-                </div>
-              </Link>
-            </SidebarMenuButton>
+            <ContactsButton />
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
               <Link href="https://brekkylab.github.io/ailoy" target="_blank">
-                <div className="aui-sidebar-footer-icon-wrapper flex aspect-square size-8 items-center justify-center rounded-lg border border-sidebar-border text-sidebar-foreground">
-                  <BookOpenText className="aui-sidebar-footer-icon size-4" />
+                <div className="aui-sidebar-footer-icon-wrapper flex aspect-square size-8 items-center justify-center">
+                  <img
+                    src="https://brekkylab.github.io/ailoy/img/logo.png"
+                    alt="ailoy"
+                  />
                 </div>
                 <div className="aui-sidebar-footer-heading flex flex-col gap-0.5 leading-none text-muted-foreground">
                   <p>
