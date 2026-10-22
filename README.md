@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This project is no longer maintained, and the demo server is no longer available.
+
 # Ailoy + assistant-ui example
 
 This is the example web application of using Ailoy with [assistant-ui](https://github.com/Yonom/assistant-ui).
